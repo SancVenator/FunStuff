@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Building Verification</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #1a1a1a; 
+        }
+        canvas { 
+            display: block; 
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        #controls-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #floor-select {
+            background: #222;
+            color: white;
+            border: 1px solid #4facfe;
+            padding: 8px 12px;
+            border-radius: 4px;
+            outline: none;
+            cursor: pointer;
+            margin-top: 8px;
+            width: 100%;
+            font-size: 14px;
+        }
+        h2 { margin: 0 0 10px 0; font-size: 18px; color: #4facfe; }
+        p { margin: 5px 0; font-size: 14px; }
+        label { font-size: 14px; color: #ccc; font-weight: 600; }
+    </style>
+    <!-- Import maps polyfill -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <!-- Import map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">
+        <h2>Loading 3D Data...</h2>
+        <p>Fetching building_data.json</p>
+    </div>
+
+    <!-- New Control Panel for Floor Selection -->
+    <div id="controls-panel" style="display: none;">
+        <label for="floor-select">View specific floor:</label><br>
+        <select id="floor-select">
+            <option value="all">Display All Floors</option>
+        </select>
+        
+        <div id="scale-controls" style="display: none; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 10px;">
+            <label for="scale-slider">Adjust Scale:</label><br>
+            <input type="range" id="scale-slider" min="0.1" max="5" step="0.1" value="1" style="width: 100%; margin-top: 5px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #aaa;">
+                <span>0.1x</span>
+                <span id="scale-value" style="color: #4facfe; font-weight: bold;">1.0x</span>
+                <span>5.0x</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Preview Panel -->
+    <div id="image-panel" style="display: none; position: absolute; bottom: 20px; right: 20px; background: rgba(0, 0, 0, 0.7); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); text-align: center; max-width: 400px; max-height: 400px; overflow: hidden; pointer-events: none;">
+        <p style="margin: 0 0 10px 0; color: #4facfe; font-size: 14px; font-weight: bold;">PDF Source Crop</p>
+        <img id="bbox-image" src="" alt="BBOX Crop" style="max-width: 100%; max-height: 350px; object-fit: contain; border-radius: 4px; border: 1px solid #444;">
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. Setup Scene, Camera, Renderer
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#222222');
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500000);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // 2. Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(2000, 5000, 3000);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 100000;
+        
+        const d = 10000;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        scene.add(dirLight);
+
+        const gridHelper = new THREE.GridHelper(10000, 100, 0x444444, 0x222222);
+        scene.add(gridHelper);
+
+        let floorGroups = []; // Array to store references to each floor's 3D group
+
+        // 3. Load Data & Generate Geometry
+        async function init() {
+            try {
+                const response = await fetch('building_data.json');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+
+                document.getElementById('info').innerHTML = `
+                    <h2>${data.property_address || 'Unknown Property'}</h2>
+                    <p>Neighborhood: ${data.neighborhood || 'N/A'}</p>
+                    <p>Total Floors Detected: ${data.structures.length}</p>
+                `;
+
+                // Show controls panel
+                document.getElementById('controls-panel').style.display = 'block';
+                const select = document.getElementById('floor-select');
+
+                let minX = Infinity, maxX = -Infinity;
+                let minY = Infinity, maxY = -Infinity;
+                let minZ = Infinity, maxZ = -Infinity;
+
+                const buildingGroup = new THREE.Group();
+
+                data.structures.forEach((floor, index) => {
+                    // Populate dropdown with this floor
+                    const option = document.createElement('option');
+                    option.value = index; // Storing array index as value
+                    option.text = `Level: ${floor.level} (BBOX ${index + 1})`;
+                    select.appendChild(option);
+
+                    // Colors
+                    const hue = (index * 137.5) % 360; 
+                    const color = new THREE.Color(`hsl(${hue}, 70%, 55%)`);
+                    
+                    const material = new THREE.MeshStandardMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.85,
+                        roughness: 0.3,
+                        metalness: 0.2,
+                        side: THREE.DoubleSide
+                    });
+
+                    // Create a dedicated group for this floor
+                    const floorGroup = new THREE.Group();
+                    floorGroup.userData = { level: floor.level, index: index };
+
+                    // Calculate local center for this specific floor group
+                    let fMinX = Infinity, fMaxX = -Infinity;
+                    let fMinZ = Infinity, fMaxZ = -Infinity;
+                    floor.walls.forEach(w => {
+                        fMinX = Math.min(fMinX, w.position.x - w.dimensions.width/2);
+                        fMaxX = Math.max(fMaxX, w.position.x + w.dimensions.width/2);
+                        fMinZ = Math.min(fMinZ, w.position.y - w.dimensions.depth/2);
+                        fMaxZ = Math.max(fMaxZ, w.position.y + w.dimensions.depth/2);
+                    });
+                    const fCenterX = fMinX === Infinity ? 0 : (fMinX + fMaxX) / 2;
+                    const fCenterZ = fMinZ === Infinity ? 0 : (fMinZ + fMaxZ) / 2;
+                    
+                    // Move the group's pivot to its center so scaling stays local
+                    floorGroup.position.set(fCenterX, 0, fCenterZ);
+
+                    floor.walls.forEach(wall => {
+                        const { width, height, depth } = wall.dimensions;
+                        const { x, y, z } = wall.position;
+
+                        const geometry = new THREE.BoxGeometry(width, height, depth);
+                        const mesh = new THREE.Mesh(geometry, material);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        
+                        const mappedY = z + (height / 2); 
+                        // Subtract the center offset from the mesh so it sits relative to the group's origin
+                        mesh.position.set(x - fCenterX, mappedY, y - fCenterZ); 
+                        
+                        if (wall.rotation) {
+                            mesh.rotation.y = wall.rotation;
+                        }
+
+                        floorGroup.add(mesh);
+
+                        minX = Math.min(minX, x - width/2);
+                        maxX = Math.max(maxX, x + width/2);
+                        minY = Math.min(minY, mappedY - height/2);
+                        maxY = Math.max(maxY, mappedY + height/2);
+                        minZ = Math.min(minZ, y - depth/2);
+                        maxZ = Math.max(maxZ, y + depth/2);
+                    });
+
+                    buildingGroup.add(floorGroup);
+                    floorGroups.push(floorGroup);
+                });
+
+                const centerX = (minX + maxX) / 2;
+                const centerZ = (minZ + maxZ) / 2;
+                buildingGroup.position.set(-centerX, 0, -centerZ);
+                scene.add(buildingGroup);
+
+                const scaleControls = document.getElementById('scale-controls');
+                const scaleSlider = document.getElementById('scale-slider');
+                const scaleValue = document.getElementById('scale-value');
+                const imagePanel = document.getElementById('image-panel');
+                const bboxImage = document.getElementById('bbox-image');
+                
+                let selectedGroup = null;
+                const floorDataList = data.structures;
+
+                // Setup listener for dropdown toggle
+                select.addEventListener('change', (e) => {
+                    const val = e.target.value;
+                    
+                    if (val === 'all') {
+                        scaleControls.style.display = 'none';
+                        imagePanel.style.display = 'none';
+                        selectedGroup = null;
+                        floorGroups.forEach(group => group.visible = true);
+                    } else {
+                        const idx = parseInt(val);
+                        scaleControls.style.display = 'block';
+                        
+                        // Update Image Preview
+                        const floorData = floorDataList[idx];
+                        if (floorData.image) {
+                            bboxImage.src = floorData.image;
+                            imagePanel.style.display = 'block';
+                        } else {
+                            imagePanel.style.display = 'none';
+                        }
+
+                        floorGroups.forEach((group, i) => {
+                            if (i === idx) {
+                                group.visible = true;
+                                selectedGroup = group;
+                                // Sync slider with the current scale of this specific group
+                                scaleSlider.value = group.scale.x;
+                                scaleValue.innerText = group.scale.x.toFixed(1) + 'x';
+                            } else {
+                                group.visible = false;
+                            }
+                        });
+                    }
+                });
+
+                // Apply scale dynamically to the selected group
+                scaleSlider.addEventListener('input', (e) => {
+                    if (selectedGroup) {
+                        const s = parseFloat(e.target.value);
+                        selectedGroup.scale.set(s, s, s);
+                        scaleValue.innerText = s.toFixed(1) + 'x';
+                    }
+                });
+
+                if (minX !== Infinity) {
+                    const sizeX = maxX - minX;
+                    const sizeY = maxY - minY;
+                    const sizeZ = maxZ - minZ;
+                    const maxDim = Math.max(sizeX, sizeY, sizeZ);
+                    
+                    controls.target.set(0, sizeY / 2, 0);
+                    camera.position.set(maxDim * 1.2, maxDim * 1.5, maxDim * 1.2);
+                    controls.update();
+                }
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('info').innerHTML = `
+                    <h2 style="color: #ff4a4a;">Error Loading Data</h2>
+                    <p>${err.message}</p>
+                `;
+            }
+        }
+
+        init();
+
+        // Render loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
