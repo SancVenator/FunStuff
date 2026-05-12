@@ -9,6 +9,7 @@ class World:
         self.bg_image = self.load_background()
         self.collision_map = self.load_collision_map()
         self.active_tooltip = None
+        self.name = "farm" # Default level
         
         # UI Sprites
         try:
@@ -45,6 +46,7 @@ class World:
             return None
 
     def load_level(self, name):
+        self.name = name
         if name == "home":
             bg_path = os.path.join("photos for game", "home.png")
             try:
@@ -97,13 +99,13 @@ class World:
         
         # Fonts (Old-timey serif)
         font_name = pygame.font.match_font('georgia', 'timesnewroman', 'serif')
-        font = pygame.font.Font(font_name, 28)
+        font = pygame.font.Font(font_name, 24)
         text_surf = font.render(msg, True, (60, 40, 20)) # Dark brown ink color
         
         if self.scroll_img:
-            # Scale scroll to fit text
+            # Scale scroll to fit text with generous margins
             tw, th = text_surf.get_size()
-            sw, sh = tw + 80, th + 50
+            sw, sh = tw + 120, th + 60
             scroll_scaled = pygame.transform.scale(self.scroll_img, (sw, sh))
             
             # Position

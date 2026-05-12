@@ -45,10 +45,10 @@ INTERACT_RANGE = 100
 
 # Interactors: (Rect, Message)
 INTERACTORS = [
-    {"rect": pygame.Rect(580, 440, 100, 100), "msg": "Press 1 to Enter Hut"},
-    {"rect": pygame.Rect(1055, 507, 80, 80), "msg": "Press 1 to Enter Home"},
-    {"rect": pygame.Rect(1070, 640, 100, 100), "msg": "Press 2 to Draw Water"},
-    {"rect": pygame.Rect(200, 750, 150, 150), "msg": "Press 3 to Rest"},
+    {"rect": pygame.Rect(580, 440, 100, 100), "msg": "[1] Enter Hut"},
+    {"rect": pygame.Rect(1055, 507, 80, 80), "msg": "[1] Enter Home"},
+    {"rect": pygame.Rect(1070, 640, 100, 100), "msg": "[2] Draw Water"},
+    {"rect": pygame.Rect(200, 750, 150, 150), "msg": "[3] Rest"},
 ]
 
 

@@ -27,6 +27,15 @@ class Player:
         self.height = first_frame.get_height()
         self.controls_enabled = True
         self.scale_override = None
+        
+        # Load walking sound
+        try:
+            sound_path = "photos for game/Walking on dirt sound effect  (no copyright).mp3"
+            self.walk_sound = pygame.mixer.Sound(sound_path)
+            self.walk_sound_playing = False
+        except Exception as e:
+            print(f"Error loading walk sound: {e}")
+            self.walk_sound = None
 
         
     def handle_input(self, keys):
@@ -116,6 +125,27 @@ class Player:
             self.y = HEIGHT
         elif self.y < HORIZON:
             self.y = HORIZON
+
+        # 4. Animation and Sound Update
+        frames = self.animations.get(self.current_anim, self.animations["idle"])
+        if len(frames) > 1 and self.z == 0:
+            if abs(self.vx) > 0.1 or abs(self.vy_walk) > 0.1:
+                self.frame_index += 0.15 # Speed of walking animation
+            else:
+                self.frame_index = 0
+        elif self.z == 0:
+            self.frame_index = 0
+            
+        # Sound Logic
+        is_moving = (abs(self.vx) > 0.1 or abs(self.vy_walk) > 0.1) and self.z == 0
+        if is_moving and self.controls_enabled:
+            if not self.walk_sound_playing and self.walk_sound:
+                self.walk_sound.play(-1) # Loop while moving
+                self.walk_sound_playing = True
+        else:
+            if self.walk_sound_playing and self.walk_sound:
+                self.walk_sound.stop()
+                self.walk_sound_playing = False
 
 
     def check_collision(self, world):

@@ -41,7 +41,7 @@ class SpriteSheet:
         """Returns a dictionary of named animations."""
         anims = {
             "idle": [self.get_image(0, 0)],
-            "walk_side": [self.get_image(1, 0)],
+            "walk_side": [self.get_image(1, 0), self.get_image(2, 0)],
             "jump": [self.get_image(5, 1), self.get_image(6, 1)],
             "sit": [self.get_image(5, 0)],
             "kneel": [self.get_image(6, 0)],
